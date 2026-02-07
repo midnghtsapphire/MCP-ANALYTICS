@@ -1,14 +1,86 @@
 {
   "name": "mct-analytics",
   "version": "1.0.0",
-  "description": "MCT module for ANALYTICS",
+  "description": "MCT Analytics Module for Model Context Protocol",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/index.ts",
-    "test": "jest",
-    "setup": "npm install && npx drizzle-kit push:pg"
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev src/index.ts"
   },
-  "keywords": ["mct", "api", "microservice"],
-  "license": "MIT"
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.17.1",
+    "mongoose": "^5.13.8",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "ts-node-dev": "^1.1.6",
+    "typescript": "^4.3.5",
+    "@types/node": "^16.0.0",
+    "@types/express": "^4.17.12"
+  },
+  "type": "module"
+}
+### `src/index.ts`
+import express from 'express';
+import { mctServer } from './mct/server';
+import apiRoutes from './api/routes';
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.use(express.json());
+app.use('/api', apiRoutes);
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  mctServer.start();
+});
+### `src/api/routes.ts`
+import { Router } from 'express';
+import { getAnalyticsData } from '../services/analyticsService';
+const router = Router();
+router.get('/analytics', async (req, res) => {
+  try {
+    const data = await getAnalyticsData();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+export default router;
+### `src/db/schema.ts`
+import mongoose from 'mongoose';
+const analyticsSchema = new mongoose.Schema({
+  userId: { type: String, required: true },
+  eventData: { type: Map, of: String },
+  timestamp: { type: Date, default: Date.now }
+});
+export const Analytics = mongoose.model('Analytics', analyticsSchema);
+### `src/mct/server.ts`
+import { McpServer, StdioServerTransport } from '@modelcontextprotocol/sdk';
+import { registerTools } from './tools';
+export const mctServer = new McpServer({
+  name: "mct-analytics-server",
+  version: "1.0.0"
+});
+const transport = new StdioServerTransport();
+mctServer.connect(transport).then(() => {
+  registerTools(mctServer);
+  console.log('MCT Server connected and tools registered.');
+});
+### `src/mct/tools.ts`
+import { McpServer } from '@modelcontextprotocol/sdk';
+import { getAnalyticsData } from '../services/analyticsService';
+export function registerTools(server: McpServer) {
+  server.registerTool("get_analytics_data", {
+    inputSchema: {},
+    outputSchema: {}
+  }, async (params) => {
+    const data = await getAnalyticsData();
+    return { content: [{ type: "json", json: data }] };
+  });
+}
+### `src/services/analyticsService.ts`
+import { Analytics } from '../db/schema';
+export async function getAnalyticsData() {
+  return Analytics.find({});
 }
